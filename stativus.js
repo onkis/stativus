@@ -10,11 +10,6 @@ if (typeof DEBUG_MODE === "undefined"){
   DEBUG_MODE = true;
 }
 
-// Pre-processor for eventable code
-if (typeof EVENTABLE === "undefined"){
-  EVENTABLE = true;
-}
-
 Stativus = { DEFAULT_TREE: 'default', SUBSTATE_DELIM: 'SUBSTATE:', version: '0.5' };
 Stativus.State = {
   
@@ -73,6 +68,51 @@ Stativus.State = {
       this.history = state.name;
       if (DEBUG_MODE) console.log(['HISTORY STATE: For',this.name,'=> history state set to:', state.name].join(' '));
     }
+  },
+  tryToPerform: function(name, args){
+    if(this[name]){
+      return this[name];
+    }
+    else if(this.actions && args[0]){
+      var selectors = this._getSelectors(),
+          evt = args[0],
+          el = jQuery(evt.target),
+          ret = false, i;
+      var selLen = selectors.length;
+          
+      while(!ret && el.length > 0 && el[0] !== document.body){
+        i = selLen;
+        while(!ret && ((i--) > 0)){
+          if(el.is(selectors[i])) ret = selectors[i];
+        }
+        el = el.parent();
+      }
+      el = null;
+      if(ret && this.actions[ret][name]) return this.actions[ret][name];
+    }
+    return false;
+  },
+  
+  /**
+   * Loop through the actions object to get the keys, which will be selectors
+   * that need actions.
+   */
+  _getSelectors: function() {
+    var selectors = this._selectors,
+        actions, name;
+    if(selectors) {
+      return selectors;
+    }
+
+    selectors = this._selectors = [];
+
+    actions = this.actions;
+    for(name in actions){
+      if(actions.hasOwnProperty(name)) {
+        selectors.push(name);
+      }
+    }
+    return selectors;
   }
 };
 // Our Maker function:  Thank you D.Crockford.
@@ -466,7 +506,7 @@ Stativus.Statechart = {
     name: _cascadeEvents
   */
   _cascadeEvents: function(evt, args, responder, allStates, tree){
-    var handled, trees, len, ssName, found = false;
+    var handled, trees, len, ssName, found = false, func;
     
     // substate prep work...
     if (tree){
@@ -476,9 +516,10 @@ Stativus.Statechart = {
     }
     
     while(!handled && responder){
-      if (responder[evt]){
+      func = responder.tryToPerform(evt, args);
+      if (func){
         if (DEBUG_MODE) console.log(['EVENT:',responder.name,'fires','['+evt+']', 'with', args.length || 0, 'argument(s)'].join(' '));
-        handled = responder[evt].apply(responder, args);
+        handled = func.apply(responder, args);
         found = true;
       }
       // check to see if we have reached the end of this tree
@@ -766,102 +807,6 @@ Stativus.Statechart = {
 };
 
 Stativus.createStatechart = function(){ return this.Statechart.create(); };
-
-// All this code will add some awesome eventing structure that looks like backbone.js
-// 
-if (EVENTABLE){
-  Stativus.Statechart._internalTryToPerform = function(node, evt, args){
-    var that = this, lookup, selectors;
-    
-    if (!node || !node.className) return;
-    selectors = node.className.split(/\s+/).map( function(x){ return '.'+x; });
-    if (node.id) selectors.push('#'+node.id);
-    selectors.forEach( function(x){
-      lookup = (x+' '+evt).replace(/^\s\s*/, '').replace(/\s\s*$/, '');
-      that._structureCrawl('_cascadeActionHandler', lookup, args);
-    });
-  };
-  
-  Stativus.Statechart._cascadeActionHandler = function(lookup, args, responder, allStates, tree){
-    var handled, trees, len, ssName, found = false, evt;
-    
-    // substate prep work...
-    if (tree){
-      trees = tree.split('=>');
-      len = trees.length || 0;
-      ssName = trees[len-1];
-    }
-    
-    while(!handled && responder){
-      evt = responder.actions ? responder.actions[lookup] : null;
-      if (evt){
-        if (DEBUG_MODE) console.log(['ACTION LOOKUP:',responder.name,'will fire [',evt,'] for','['+lookup+']', 'with', args.length || 0, 'argument(s)'].join(' '));
-        args.unshift(evt);
-        this.sendEvent.apply(this, args);
-        return [true, true];
-      }
-      // check to see if we have reached the end of this tree
-      if (tree && ssName === responder.name) return [handled, found];
-      responder = !handled && responder.parentState ? allStates[responder.parentState] : null ;
-    }
-    
-    return [handled, found];
-  };
-  
-  // Special sauce when you have jQuery Loaded
-  var jQueryIsLoaded=false;
-  try {
-    if (jQuery) jQueryIsLoaded=true;
-  }
-  catch(err){
-    jQueryIsLoaded=false;
-  }
-
-  if(jQueryIsLoaded){
-    
-    var findEventableNodeData = function(start){
-      var parents, evt, evts, args,
-          node = $(start), found, ret;
-      if (node.hasClass('eventable')) found = node;
-
-      if (!found){
-        parents = node.parents('.eventable');
-        if (parents && parents.length > 0) found = parents;
-      }
-
-      if (found){
-        args = found.attr('data');
-        args = args ? args.split('::') : [];
-        found = found[0];
-      }
-      return [found, args];
-    };
-  
-    Stativus.Statechart.tryToPerform = function(evt){   
-      if (!evt) return;   
-      var args, selectors = [], 
-          tuple = findEventableNodeData(evt.target);
-      if (!tuple[0]) return;
-      tuple[1].push(evt); // Add the evt to the last argument
-      this._internalTryToPerform(tuple[0], evt.type, tuple[1]);
-    };
-  }  
-  else {
-    
-    // When you don't have JQuery you can still fire off the tryToPerform, but
-    // you are responsible for converting the selectors
-    Stativus.Statechart.tryToPerform = function(evt){
-      if (!evt) return;
-      var args = [], len = arguments.length, i, lookup;
-      if (len < 2) return;
-      for(i = 2; i < len; i++){
-        args[i-2] = arguments[i];
-      }
-      args.push(evt);
-      this._internalTryToPerform(evt.target, evt.type, args);
-    };
-  }
-}
 
 // TODO:  Work on AMD Loading...
 if (typeof window !== "undefined") {

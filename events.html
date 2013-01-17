@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  
+</head>
+
+<body>
+  <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+  <script src="./stativus.js"></script>
+  
+  <script type ='text/javascript'>
+    //statechart
+    var statechart = Stativus.createStatechart();
+    
+    statechart.addState('root', {
+      initialSubstate: 'on',
+      
+      states: [
+      { name: 'on',
+            enterState: function(){
+              console.log("Entering on State");
+            },
+            exitState: function(){
+        
+            },
+      
+            actions: {
+              '#someButton':{
+                click: function(evt){
+                  alert('got a click in on state!');
+                  this.goToState('dork');
+                }
+              }
+            }
+      
+          },
+          
+          {name: 'dork',
+                enterState: function(){
+                  console.log("Entering Dork State");
+                },
+                exitState: function(){
+        
+                },
+      
+                actions: {
+                  '#someButton':{
+                    click: function(evt){
+                      alert('got a click in dork state!');
+                      this.goToState('root');
+                    }
+                  }
+                }
+      
+              }
+      
+      ]
+    });
+    
+    statechart.initStates('root');
+    //root responder
+    jQuery(document).bind('click mouseup', 
+    function(evt){
+      statechart.sendEvent(evt.type, evt);
+    });
+    
+    
+    
+  
+  </script>
+  
+  
+  <button id="someButton">Click ME!</button>
+</body>
+</html>
